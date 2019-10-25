@@ -50,31 +50,34 @@ AC_DEFUN([PBS_AC_WITH_DATABASE_DIR],
   [database_dir="$with_database_dir"]
   AS_IF(
     [test "$database_dir" = ""],
-    AC_CHECK_HEADER([libpq-fe.h], [], [database_dir="/usr"])
+    AC_CHECK_HEADER([aerospike.h], [], [database_dir="/usr"])
   )
   AS_IF(
     [test "$database_dir" != ""],
     AS_IF(
-      [test -r "$database_dir/include/libpq-fe.h"],
+      [test -r "$database_dir/include/aerospike.h"],
       [database_inc="-I$database_dir/include"],
-      [test -r "$database_dir/include/pgsql/libpq-fe.h"],
-      [database_inc="-I$database_dir/include/pgsql"],
-      [test -r "$database_dir/include/postgresql/libpq-fe.h"],
-      [database_inc="-I$database_dir/include/postgresql"],
+      [test -r "$database_dir/include/aerospike/aerospike.h"],
+      [database_inc="-I$database_dir/include/aerospike"],
       AC_MSG_ERROR([Database headers not found.])
     )
   )
+  AS_IF([test "$database_dir" = "/usr"],
+    # Using system installed libaerospike.so
+    AS_IF(
+      [test -r "/usr/lib64/libaerospike.so"],
+      [database_lib="-laerospike -lssl -lm"],
+      [test -r "/usr/lib/libaerospike.so"],
+      [database_lib="-laerospike -lssl -lm"])
+  )
   AS_IF(
-    # Using system installed PostgreSQL
     [test "$with_database_dir" = ""],
-    AC_CHECK_LIB([pq], [PQconnectdb],
-      [database_lib="-lpq"],
-      AC_MSG_ERROR([PBS database shared object library not found.])),
+    # Using system installed PostgreSQL
     # Using developer installed PostgreSQL
-    [test -r "$database_dir/lib64/libpq.a"],
-    [database_lib="$database_dir/lib64/libpq.a"],
-    [test -r "$database_dir/lib/libpq.a"],
-    [database_lib="$database_dir/lib/libpq.a"],
+    [test -r "$database_dir/lib64/libaerospike.a"],
+    [database_lib="$database_dir/lib64/libaerospike.a"],
+    [test -r "$database_dir/lib/libaerospike.a"],
+    [database_lib="$database_dir/lib/libaerospike.a"],
     AC_MSG_ERROR([PBS database library not found.])
   )
   AC_MSG_RESULT([$database_dir])

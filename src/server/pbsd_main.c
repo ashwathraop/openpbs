@@ -106,6 +106,7 @@
 #include <pbs_python.h>  /* for python interpreter */
 #include "pbs_undolr.h"
 #include "auth.h"
+#include <grp.h>
 
 #include "pbs_v1_module_common.i"
 
@@ -121,7 +122,7 @@ extern void stop_db();
 #ifdef NAS /* localmod 005 */
 extern int chk_and_update_db_svrhost();
 #endif /* localmod 005 */
-
+extern void *svr_db_conn;
 /* External data items */
 extern  pbs_list_head svr_requests;
 extern char     *msg_err_malloc;
@@ -1060,7 +1061,9 @@ main(int argc, char **argv)
 	 */
 	prctl(PR_SET_FPEMU, PR_FPEMU_NOPRINT, 0, 0, 0);
 #endif
-
+	i = getgid();
+	(void)setgroups(1, (gid_t *)&i);	/* secure suppl. groups */
+	
 	/* Setup db connection here */
 	if (server_init_type != RECOV_CREATE && !stalone && !already_forked)
 		background = 1;
@@ -1117,6 +1120,7 @@ main(int argc, char **argv)
 
 #ifndef DEBUG
 	if (stalone == 0 && already_forked == 0) {
+		pbs_db_disconnect(svr_db_conn); //disconnect before we fork or areospike_close wont like it
 		if ((sid = go_to_background()) == -1) {
 			stop_db();
 			return (2);
@@ -1131,7 +1135,8 @@ main(int argc, char **argv)
 
 	/* Protect from being killed by kernel */
 	daemon_protect(0, PBS_DAEMON_PROTECT_ON);
-
+	if ((rc = connect_to_db(background)) != 0)
+		return rc;
 #ifdef _POSIX_MEMLOCK
 	if (do_mlockall == 1) {
 		if (mlockall(MCL_CURRENT|MCL_FUTURE) == -1) {

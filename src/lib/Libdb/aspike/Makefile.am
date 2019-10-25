@@ -1,4 +1,3 @@
-#!/bin/bash
 #
 # Copyright (C) 1994-2021 Altair Engineering, Inc.
 # For more information, contact Altair at www.altair.com.
@@ -37,24 +36,22 @@
 # "OpenPBS®", "PBS Professional®", and "PBS Pro™" and Altair's logos is
 # subject to Altair's trademark licensing policies.
 
+noinst_LTLIBRARIES = libpbsdbas.la
 
-# save env variables in a temp file
-#env_save="/tmp/$$_$(date +'%s')_env_save"
-#declare -x > "${env_save}"
+libpbsdbas_la_CPPFLAGS = \
+	-I$(top_srcdir)/src/include \
+	@database_inc@
 
-. ${PBS_CONF_FILE:-/etc/pbs.conf}
+libpbsdbas_la_LIBADD = \
+	@database_lib@
 
-# re-apply saved env variables
-#. "${env_save}"
-
-#rm -f "${env_save}"
-
-# Source the file that sets DB ENV variables
-#. ${PBS_EXEC}/libexec/pbs_db_env
-
-
-# Loading dynamic library at PBS_EXEC/lib
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PBS_EXEC/lib/:$PBS_EXEC/lib64/
-
-
-exec $PBS_EXEC/sbin/pbs_server.bin ${1+"$@"}
+libpbsdbas_la_SOURCES = \
+	db_aerospike.h \
+	db_common.c \
+	db_attr.c \
+	db_job.c \
+	db_resv.c \
+	db_svr.c \
+	db_que.c \
+	db_node.c \
+	db_sched.c

@@ -2591,3 +2591,79 @@ create_subjob_id(char *parent_jid, int sjidx)
 	*pcb = '[';
 	return jid;
 }
+
+/**
+ * @brief
+ *	Create a svrattrl structure from the attr_name, and values
+ *
+ * @param[in]	attr_name - name of the attributes
+ * @param[in]	attr_resc - name of the resouce, if any
+ * @param[in]	attr_value - value of the attribute
+ * @param[in]	attr_flags - Flags associated with the attribute
+ *
+ * @retval - Pointer to the newly created attribute
+ * @retval - NULL - Failure
+ * @retval - Not NULL - Success
+ *
+ */
+svrattrl *
+make_attr(char *attr_name, char *attr_resc, char *attr_value, int attr_flags)
+{
+	int tsize;
+	svrattrl *psvrat = NULL;
+	int nlen = 0, rlen = 0, vlen = 0;
+	char *p = NULL;
+
+	tsize = sizeof(svrattrl);
+	if (!attr_name)
+		return NULL;
+
+	nlen = strlen(attr_name);
+	tsize += nlen + 1;
+
+	if (attr_resc) {
+		rlen = strlen(attr_resc);
+		tsize += rlen + 1;
+	}
+
+	if (attr_value) {
+		vlen = strlen(attr_value);
+		tsize += vlen + 1;
+	}
+
+	if ((psvrat = (svrattrl *) malloc(tsize)) == 0)
+		return NULL;
+
+	CLEAR_LINK(psvrat->al_link);
+	psvrat->al_sister = NULL;
+	psvrat->al_atopl.next = 0;
+	psvrat->al_tsize = tsize;
+	psvrat->al_name = (char *) psvrat + sizeof(svrattrl);
+	psvrat->al_resc = 0;
+	psvrat->al_value = 0;
+	psvrat->al_nameln = nlen;
+	psvrat->al_rescln = 0;
+	psvrat->al_valln = 0;
+	psvrat->al_refct = 1;
+
+	strcpy(psvrat->al_name, attr_name);
+	p = psvrat->al_name + psvrat->al_nameln + 1;
+
+	if (attr_resc && attr_resc[0] != '\0') {
+		psvrat->al_resc = p;
+		strcpy(psvrat->al_resc, attr_resc);
+		psvrat->al_rescln = rlen;
+		p = p + psvrat->al_rescln + 1;
+	}
+	
+	psvrat->al_value = p;
+	if (attr_value && attr_value[0] != '\0') {
+		strcpy(psvrat->al_value, attr_value);
+		psvrat->al_valln = vlen;
+	}
+
+	psvrat->al_flags = attr_flags;
+	psvrat->al_op = SET;
+
+	return (psvrat);
+}

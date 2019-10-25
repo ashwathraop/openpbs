@@ -248,11 +248,11 @@ if [ "${PBS_START_SERVER:-0}" != 0 ] ; then
 	# Check for the db install script
 	if [ ! -x "${PBS_EXEC}/libexec/pbs_db_utility" ]; then
 		echo "${PBS_EXEC}/libexec/pbs_db_utility not found"
-		exit 1
+		#exit 1
 	fi
 
 	# Source the file that sets DB env variables
-	. "$PBS_EXEC"/libexec/pbs_db_env
+	#. "$PBS_EXEC"/libexec/pbs_db_env
 	if [ $? -ne 0 ]; then
 		echo "Could not setup PBS Data Service environment"
 		exit 1
@@ -285,8 +285,8 @@ if [ "${PBS_START_SERVER:-0}" != 0 ] ; then
 	create_new_svr_data=1
 
 	# invoke the dataservice creation script for pbs
-	resp=`${PBS_EXEC}/libexec/pbs_db_utility ${INSTALL_DB} 2>&1`
-	ret=$?
+	#resp=`${PBS_EXEC}/libexec/pbs_db_utility ${INSTALL_DB} 2>&1`
+	ret=0
 	if [ $ret -eq 2 ]; then
 		create_new_svr_data=0
 	elif [ $ret -ne 0 ]; then

@@ -44,6 +44,7 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <stdbool.h>
 
 #ifndef	MOM_MACH
 #include "mom_mach.h"

@@ -201,6 +201,7 @@ stop_db()
 		if (db_oper_failed_times > MAX_DB_LOOP_DELAY)
 			db_delay = MAX_DB_LOOP_DELAY; /* limit to MAX_DB_LOOP_DELAY secs */
 		sleep(db_delay); /* don't burn the CPU looping too fast */
+		return;
 	}
 }
 
@@ -597,3 +598,5 @@ free_db_attr_list(pbs_db_attr_list_t *attr_list)
 		attr_list->attr_count = 0;
 	}
 }
+
+

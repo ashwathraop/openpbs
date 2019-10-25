@@ -371,8 +371,8 @@ pbsd_init(int type)
 
 	log_supported_auth_methods(pbs_conf.supported_auth_methods);
 
-	i = getgid();
-	(void)setgroups(1, (gid_t *)&i);	/* secure suppl. groups */
+	//i = getgid();
+	//(void)setgroups(1, (gid_t *)&i);	/* secure suppl. groups */
 
 #ifdef  RLIMIT_CORE
 	if (pbs_conf.pbs_core_limit) {

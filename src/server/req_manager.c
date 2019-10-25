@@ -1103,11 +1103,11 @@ mgr_unset_attr(attribute *pattr, void *pidx, attribute_def *pdef, int limit, svr
 				break;
 		}
 
-		rc = pbs_db_delete_attr_obj(conn, &obj, parent_id, &db_attr_list);
-		free_db_attr_list(&db_attr_list);
+	rc = pbs_db_delete_attr_obj(conn, &obj, parent_id, &db_attr_list);
+	free_db_attr_list(&db_attr_list);
 
-		if (rc != 0)
-			return -1;
+	if (rc != 0)
+		return -1;
 
 	if (do_indirect_check)
 		indirect_target_check(0);
