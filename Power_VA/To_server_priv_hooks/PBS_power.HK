@@ -1,0 +1,7 @@
+hook_name=PBS_power
+type=pbs
+enabled=false
+event=periodic,execjob_begin,execjob_prologue,execjob_epilogue,execjob_end,exechost_periodic,exechost_startup
+order=2000
+alarm=180
+freq=300

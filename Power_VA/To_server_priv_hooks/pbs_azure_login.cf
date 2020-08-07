@@ -1,0 +1,6 @@
+{
+	"app_id": "APPLICATION_ID",
+	"tenant_id": "TENANT_ID",
+	"secret": "SECRET_KEY_ASSOCIATED WITH_APP_ID",
+	"resource_group": "RESOURCE_GROUP_OF_VMS"
+}
