@@ -1,0 +1,399 @@
+#!/bin/sh
+# Copyright (C) 1994-2020 Altair Engineering, Inc.
+# For more information, contact Altair at www.altair.com.
+#
+# This file is part of both the OpenPBS software ("OpenPBS")
+# and the PBS Professional ("PBS Pro") software.
+#
+# Open Source License Information:
+#
+# OpenPBS is free software. You can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.
+#
+# OpenPBS is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public
+# License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Commercial License Information:
+#
+# PBS Pro is commercially licensed software that shares a common core with
+# the OpenPBS software.  For a copy of the commercial license terms and
+# conditions, go to: (http://www.PbsServicepro.com/agreement.html) or contact the
+# Altair Legal Department.
+#
+# Altair's dual-license business model allows companies, individuals, and
+# organizations to create proprietary derivative works of OpenPBS and
+# distribute them - whether embedded or bundled with other software -
+# under a commercial license agreement.
+#
+# Use of Altair's trademarks, including but not limited to "PBS™",
+# "OpenPBS®", "PBS Professional®", and "PBS Pro™" and Altair's logos is
+# subject to Altair's trademark licensing policies.
+
+#######################################################################
+# Initialization:
+
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/lib/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/ocf-shellfuncs
+
+# Parameter defaults
+
+OCF_RESKEY_config_default="${HA_RSCTMP}/PbsService-${OCF_RESOURCE_INSTANCE}.config"
+OCF_RESKEY_type_default="${HA_RSCTMP}/PbsService-${OCF_RESOURCE_INSTANCE}.type"
+
+: ${OCF_RESKEY_config=${OCF_RESKEY_config_default}}
+: ${OCF_RESKEY_type=${OCF_RESKEY_type_default}}
+#######################################################################
+
+meta_data() {
+	cat <<END
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="PbsService">
+<version>1.0</version>
+
+<longdesc lang="en">
+OCF (Open Cluster Framework) compliant cluster resource agent script to manage PBS cluster.
+</longdesc>
+<shortdesc lang="en">OCF agent script for PBS</shortdesc>
+
+<parameters>
+<parameter name="type" unique="0" required="0">
+<longdesc lang="en">
+PBS component to be managed. Accepted values: server or sched. Type=server will also manage comm and postgres.
+</longdesc>
+<shortdesc lang="en">PBS daemon type</shortdesc>
+<content type="string" default="${OCF_RESKEY_type_default}" />
+</parameter>
+
+<parameter name="config" unique="1" required="1">
+<longdesc lang="en">
+pbs.conf file path for this instance of the PBS. Must be on a shared location and is available on all nodes.
+</longdesc>
+<shortdesc lang="en">pbs.conf path</shortdesc>
+<content type="string" default="${OCF_RESKEY_config_default}" />
+</parameter>
+
+</parameters>
+
+<actions>
+<action name="start"        timeout="60s" />
+<action name="stop"         timeout="60s" />
+<action name="monitor"      timeout="20s" interval="30s" depth="0" />
+<action name="reload"       timeout="20s" />
+<action name="migrate_to"   timeout="20s" />
+<action name="migrate_from" timeout="20s" />
+<action name="meta-data"    timeout="5s" />
+<action name="validate-all"   timeout="20s" />
+</actions>
+</resource-agent>
+END
+}
+CMD=`basename $0`
+
+#######################################################################
+#
+# return TRUE if a process with given PID is running
+#
+get_pid() {
+	if [ ! -z $1 ]; then
+		dtype=${1}
+	else
+		dtype=`echo ${OCF_RESKEY_type} | awk '{print tolower($0)}'`
+	fi
+	. ${PBS_CONF_FILE:-${OCF_RESKEY_config}}
+	if [ ${dtype} == "server" ]; then
+		PidFile="$PBS_HOME/server_priv/server.lock"
+	elif [ ${dtype} == "postgres" ]; then
+		PidFile="$PBS_HOME/datastore/postmaster.pid"
+	elif [ ${dtype} == "comm" ]; then
+		PidFile="$PBS_HOME/server_priv/comm.lock"
+	elif [ ${dtype} == "sched" ]; then
+		PidFile="$PBS_HOME/sched_priv/sched.lock"
+	else
+		PidFile=""
+	fi
+        if [ -f $PidFile ]; then
+		head -1 $PidFile
+        else
+                false
+        fi
+}
+
+isProcessRunning() {
+        local pid=$1
+
+        # Use /proc if it looks like it's here...
+        if [ -d /proc -a -d /proc/1 ]; then
+                [ -d /proc/$pid ]
+        else
+                # This assumes we're running as root...
+                kill -s 0 "$pid" >/dev/null 2>&1
+        fi
+}
+
+pid_status() {
+        local pid
+        pid=`get_pid ${1}`
+        if [ -n "$pid" ]; then
+                isProcessRunning $pid
+        else
+                : No pid file
+                false
+        fi
+}
+
+get_status() {
+	if ! pid_status "postgres"; then
+		return 0
+	fi
+	if ! pid_status "comm"; then
+		return 0
+	fi
+	if ! pid_status "server"; then
+		return 0
+	fi
+	isSched=`grep "PBS_START_SCHED=" ${OCF_RESKEY_config} | cut -d"=" -f2`
+        if [ ${isSched} == "1" ] && ! pid_status "sched"; then
+		return 0
+	fi
+	return 1
+}
+
+PbsService_usage() {
+	cat <<END
+usage: $0 {start|stop|monitor|migrate_to|migrate_from|validate-all|meta-data}
+
+Expects to have a fully populated OCF RA-compliant environment set.
+END
+}
+
+PbsService_start() {
+	get_status
+        if [ $? -ne 0 ]; then
+                ocf_log info "$CMD already running"
+                return $OCF_SUCCESS
+        fi
+
+	#ocf_run PBS_CONF_FILE=${OCF_RESKEY_config} /etc/init.d/pbs start
+	PBS_CONF_FILE=${OCF_RESKEY_config} /etc/init.d/pbs start
+        tries=0
+        while : # wait until the user set timeout
+        do
+                PbsService_monitor
+                ec=$?
+                if [ $ec -eq $OCF_NOT_RUNNING ]
+                then
+                        tries=`expr $tries + 1`
+                        ocf_log info "waiting for PBS to come up"
+                        sleep 1
+                else
+                        break
+                fi
+        done
+
+        if [ $ec -ne 0 ] && get_status; then
+                PbsService_stop
+        fi
+        return $ec	
+}
+
+kill_process()
+{
+	local pid
+        if [ -z ${1} ]; then
+		prc=${OCF_RESKEY_type}
+	else
+		prc=${1}
+	fi
+        pid=`get_pid ${prc}`
+	if [ ! -z ${pid} ]; then
+        	for sig in SIGTERM SIGHUP SIGKILL ; do
+			if isProcessRunning ${pid}; then
+				kill -${sig} ${pid} >/dev/null
+				ocf_log info "signal ${sig} sent to pbs ${prc} with PID ${pid}"
+				sleep 1
+			else
+				break
+			fi
+		done
+	fi
+}
+
+signal_children()
+{        
+	kill_process "postgres"
+	kill_process "comm"
+	kill_process "server"
+	isSched=`grep "PBS_START_SCHED=" ${OCF_RESKEY_config} | cut -d"=" -f2`
+        if [ ${isSched} == "1" ]; then
+		kill_process "sched"
+        fi
+}
+
+pids_still_up()
+{
+	if pid_status "server" || pid_status "comm" || pid_status "postgres"; then
+		return 1
+	fi
+	isSched=`grep "PBS_START_SCHED=" ${OCF_RESKEY_config} | cut -d"=" -f2`
+        if [ ${isSched} == "1" ] && pid_status "sched"; then
+                return 1
+        fi
+	return 0
+}
+
+graceful_stop()
+{
+        local tries=10
+        local pid=$1
+	local still_up=1
+
+        # Try graceful stop for half timeout period if timeout period is present
+        if [ -n "$OCF_RESKEY_CRM_meta_timeout" ]; then
+                tries=$((($OCF_RESKEY_CRM_meta_timeout/1000) / 2))
+        fi
+
+        ocf_log info "Attempting graceful stop of PBS instance with server pid $pid"
+	PBS_CONF_FILE=${OCF_RESKEY_config} /etc/init.d/pbs stop
+
+        while
+                pids_still_up && [ $tries -gt 0 ]
+        do
+                sleep 1
+                tries=`expr $tries - 1`
+        done
+
+        if [ $tries -eq 0 ]; then
+                # graceful stop didn't work, process still up.
+                return 1
+        fi
+
+        return 0
+}
+
+kill_stop()
+{
+        local tries=0
+        local pid=$1
+
+        ocf_log info "Killing PBS instance with server pid $pid"
+        if isProcessRunning $pid; then
+                kill $pid >/dev/null
+                while
+                        [ $tries -lt 10 ]
+                do
+                        if isProcessRunning $pid; then
+                                tries=`expr $tries + 1`
+                                sleep 1
+                        else
+                                break
+                        fi
+                done
+        fi
+}
+
+PbsService_stop() {
+        local ret=$OCF_SUCCESS
+        local pid
+
+        if ! pid_status; then
+                ocf_log info "$CMD is not running."
+                signal_children
+                return $ret
+        fi
+
+        pid=`get_pid`
+        graceful_stop $pid
+        if [ $? -ne 0 ]; then
+                kill_stop $pid
+        fi
+
+        signal_children
+        pids_still_up
+        if [ $? -ne 0 ]; then
+                ocf_exit_reason "$CMD still running. Stopping $CMD failed."
+                ret=$OCF_ERR_GENERIC
+        fi
+
+        if [ $ret -eq 0 ]; then
+                ocf_log info "$CMD stopped."
+        fi
+
+        return $ret
+}
+
+
+PbsService_monitor() {
+	# Monitor _MUST!_ differentiate correctly between running
+	# (SUCCESS), failed (ERROR) or _cleanly_ stopped (NOT RUNNING).
+	# That is THREE states, not just yes/no.
+
+        get_status
+        if [ $? -eq 0 ]; then
+                ocf_log info "$CMD not running"
+                return $OCF_NOT_RUNNING
+        fi
+	port=`grep "PBS_BATCH_SERVICE_PORT=" ${OCF_RESKEY_config} | cut -d"=" -f2`
+	host=`grep "PBS_SERVER=" ${OCF_RESKEY_config} | cut -d"=" -f2`
+	pbs_instance="$host:$port"
+	if PBS_SERVER_INSTANCES=$pbs_instance /opt/pbs/bin/qstat -Bf | grep server_host  > /dev/null
+	then
+		return $OCF_SUCCESS
+	fi
+
+        if ! ocf_is_probe; then
+                ocf_exit_reason "Failed to access pbs status."
+        fi
+        return $OCF_ERR_GENERIC
+
+}
+
+PbsService_validate() {
+    
+    # Is the state directory writable? 
+    state_dir=`dirname "$OCF_RESKEY_config"`
+    touch "$state_dir/$$"
+    if [ $? != 0 ]; then
+	ocf_exit_reason "config file \"$OCF_RESKEY_config\" is not writable"
+	return $OCF_ERR_ARGS
+    fi
+    rm "$state_dir/$$"
+
+    return $OCF_SUCCESS
+}
+
+case $__OCF_ACTION in
+meta-data)	meta_data
+		exit $OCF_SUCCESS
+		;;
+start)		PbsService_start;;
+stop)		PbsService_stop;;
+monitor)	PbsService_monitor;;
+migrate_to)	ocf_log info "Migrating ${OCF_RESOURCE_INSTANCE} to ${OCF_RESKEY_CRM_meta_migrate_target}."
+	        PbsService_stop
+		;;
+migrate_from)	ocf_log info "Migrating ${OCF_RESOURCE_INSTANCE} from ${OCF_RESKEY_CRM_meta_migrate_source}."
+	        PbsService_start
+		;;
+reload)		ocf_log info "Reloading ${OCF_RESOURCE_INSTANCE} ..."
+		;;
+validate-all)	PbsService_validate;;
+usage|help)	PbsService_usage
+		exit $OCF_SUCCESS
+		;;
+*)		PbsService_usage
+		exit $OCF_ERR_UNIMPLEMENTED
+		;;
+esac
+rc=$?
+ocf_log debug "${OCF_RESOURCE_INSTANCE} $__OCF_ACTION : $rc"
+exit $rc
+
+
