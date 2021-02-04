@@ -190,19 +190,28 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     _confs = dict(
         [(_h, {'ns': 0, 'nm': _mph, 'svrs': [], 'moms': []}) for _h in hosts])
     _hi = 0
+    print("Total servers:", _ts, "Total moms:", _tm)
+    # Starting from host 0, set the number of server containers to be launched on each host
+    # e.g - if we have 2 servers and 2+ hosts, hosts 0 and 1 will launch 1 srv container each
+    # this is done by setting 'ns' key of the host's conf map
     for i in range(1, _ts + 1):
         _confs[hosts[_hi]]['ns'] += 1
         if _ts < _hl:
             _hi += 1
         if _hi == _hl:
             _hi = 0
+
     if _tm != 0:
         print("Total moms requested: %d" % _tm)
         print("*************************************")
         _hi = 0
         i = 0
+        # Starting from host 0, set the number of mom containers to launch on each host
+        # hosts which have server containers running will be skipped
+        # done by setting the 'nm' key of a host's conf map
         while i < _tm:
-            if _hl > 1:
+            # If num hosts > num servers, then don't launch moms on server hosts
+            if _hl > _ts:
                 if _confs[hosts[_hi]]['ns'] == 0:
                     _confs[hosts[_hi]]['nm'] += 1
                     i += 1
@@ -212,36 +221,41 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             _hi += 1
             if _hi == _hl:
                 _hi = 0
+        print("Confs after deciding mom and server counts:", _confs)
     _lps = 18000
     _svrs = []
     _sips = []
     _scnt = 1
     _svrhost = {}
     _firstsvr = 'pbs-server-1'
+    # this will add, for svr: [container name, pbs home/'default', 'server', <svr count>,  '1'/'0', svrport, dbport]
+    # for mom: [container name, pbs home/'default', 'mom', mom port]
+    # to _confs[_h]['svrs']/_confs[_h]['moms']
     for i, _h in enumerate(hosts):
         no_moms = 0
+        # For each server container the host
         for _ in range(_confs[_h]['ns']):
             print("Setup pbs-server-%d on: %s" % (_scnt,_h))
-            _svrhost.setdefault(str(_scnt), _h)
+            _svrhost.setdefault(str(_scnt), _h) # <server count: hostname>
             _c = ['pbs-server-%d' % _scnt]
             if nocon:
-                _c += ['/var/spool/pbs']
+                _c += ['/var/spool/pbs']    # isn't this also default?
             else:
                 _c += ['default']
-            _c += ['server', str(_scnt)]
-            _c.append('1' if _scnt == 1 else '0')
+            _c += ['server', str(_scnt)]    # Add 'server' and str(server count)
+            _c.append('1' if _scnt == 1 else '0')   # Add '1' for the first server, '0' for others
             _p = _lps
             _lps += 2
-            _c.append(str(_p))
-            _c.append(str(_p + 1))
-            _svr_name = _h.split('.')[0]
-            _svrs.append('%s:%d' % (_svr_name, _p))
-            _sips.append('pbs-server-%d:%s' % (_scnt, ips[i]))
-            _confs[_h]['svrs'].append(_c)
+            _c.append(str(_p))  # Adding port number for server
+            _c.append(str(_p + 1))  # Port number for db
+            _svr_name = _h.split('.')[0]    # PBS_SERVER_NAME, but UNUSED?
+            _svrs.append('%s:%d' % (_svr_name, _p)) # probably used for PSI, but UNUSED?
+            _sips.append('pbs-server-%d:%s' % (_scnt, ips[i]))  # server_host:ip address
+            _confs[_h]['svrs'].append(_c)   # a host's 'svrs' key will contain each server container's '_c' created above
             if _scnt == 1 and nocon:
-                _firstsvr = _h.split('.')[0]
+                _firstsvr = _h.split('.')[0]    # Set to the first server's short hostname
             _scnt += 1
-            if _hl > 1:
+            if _hl > _ts:   # If num hosts > num servers then server hosts won't have any moms
                 no_moms = 1
         if no_moms == 1:
             continue
@@ -249,54 +263,76 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         for _ in range(_confs[_h]['nm']):
             _c = ['']
             if nocon:
-                _c += ['/var/spool/pbs']
+                _c += ['/var/spool/pbs']    # isn't this also the default?
             else:
                 _c += ['default']
-            _c += ['mom', str(_lps)]
+            _c += ['mom', str(_lps)]    # Port number for moms start +2 after servers
             _lps += 2
             _confs[_h]['moms'].append(_c)
+
+    # This is where we add the associated server to each mom's conf
     for _h in hosts:
         _mc = len(_confs[_h]['moms'])
         i = 0
         while i != _mc:
+            # _mc = no of moms on host _h, distribute them among server hosts
             for __h in hosts:
                 if i == _mc:
                     break
                 if _confs[__h]['ns'] == 0:
                     continue
                 for s in _confs[__h]['svrs']:
-                    _confs[_h]['moms'][i].append(s[3])
-                    _confs[_h]['moms'][i].append(s[5])
+                    _confs[_h]['moms'][i].append(s[3])  # Add 'svr count' of the server to mom's conf
+                    _confs[_h]['moms'][i].append(s[5])  # Add the server's port to mom's conf
                     i += 1
                     if i == _mc:
                         break
-    svrs = dict([(_h, []) for _h in hosts])
+    # Now, mom's conf has: [container name, pbs home/'default', 'mom', mom port, <svr count>, svr port]
+
+    svrs = dict([(_h, []) for _h in hosts]) # {'host1': [], 'host2': [], ...}
     moms = dict([(_h, []) for _h in hosts])
-    _mcs = dict([(str(i), 0) for i in range(1, _ts + 1)])
-    _moms = dict([(_h, {}) for _h in hosts])
+    _mcs = dict([(str(i), 0) for i in range(1, _ts + 1)])   # mom count for each server {'1': 0, '2': 0} for 2 servers
+    _moms = dict([(_h, {}) for _h in hosts])    # {'host1': {}, 'host2': {}, ...}
+
+    # Sets up mom counts for each server and adds server host info to mom conf and creates extra dicts
     for _h in hosts:
+        # Adds all server conf info for _h [container name, pbs home/'default', 'server', <svr count>,  '1'/'0', svrport, dbport]
         svrs[_h].extend(_confs[_h]['svrs'])
         for _c in _confs[_h]['moms']:
-            _s = _c[4]
-            _c[0] = 'pbs-mom-%s-%d' % (_s, _mcs[_s])
+            _s = _c[4]  # Server count for the mom's server
+            _c[0] = 'pbs-mom-%s-%d' % (_s, _mcs[_s])    # pbs-mom-<svr count>-<mom count on that server>
             if nocon:
-                _c[4] = _svrhost[_s]
+                _c[4] = _svrhost[_s]    # seems like we are replacing <svr count> with <server hostname>
             else:
-                _c[4] = 'pbs-server-%s' % _s
+                _c[4] = 'pbs-server-%s' % _s    # Or, the server's container name
             if _s not in _moms[_h]:
-                _moms[_h].setdefault(_s, [])
+                _moms[_h].setdefault(_s, [])    # _moms = {'momhost1': {<svr count1>: []}, 'momhost2': .. }
+            # _moms = {'momhost1': {<svr count1>: ["<mom count on svr>=<mom port offset>"]}, 'momhost2': .. }
             _moms[_h][_s].append('%d=%s' % (_mcs[_s], int(_c[3]) - 18000))
-            moms[_h].append(_c)
+            moms[_h].append(_c) # {'momhost1': [mom1's conf], 'momhost2': ...}
+            # mom conf is now: [container name, pbs home/'default', 'mom', mom port, <svr hostname>/<svr container>, svr port]
             _mcs[_s] += 1
+
+    # I think we are finally going to add mom info to the server confs
+    # Will refer to server count as <svrid num> and mom count on server as <momid num on svrid>
     __moms = []
     for _h, _ss in _moms.items():
+        # _h : mom hostname
+        # _ss: {<svr1 num>: ["<mom1 num on svr1>=<mom1 port offset>", "<mom2 num on svr1>=<mom2 port offset>", ..],
+        # <svr2 num>: [... ]}
+        # for all the servers which the host's moms are distributed to
         _t = []
         for _si, _ms in _ss.items():
+            # si: svrid num
+            # _ms: ["<mom1 num on svr1>=<mom1 port offset>", "<mom2 num on svr1>=<mom2 port offset>", ...]
             if len(_ms) > 0:
+                # e.g - if _si is 1 and there are 2 moms, and 2 servers in total:
+                # _t = ["1@0=4,1=8", "2@0=6,1=10"]
                 _t.append(_si + '@' + ','.join(_ms))
         if len(_t) > 0:
+            # __moms = ["<mom host>:1@0=4,1=6+2@0=8,1=10"]  for the above example
             __moms.append(_h + ':' + '+'.join(_t))
-    _moms = '_'.join(__moms)
+    _moms = '_'.join(__moms)    # Overwriting _moms
 
     with ProcessPoolExecutor(max_workers=len(hosts)) as executor:
         _ps = []
@@ -317,8 +353,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         _ps = []
         for _h, _cs in moms.items():
             for _c in _cs:
-                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
-                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr))
+                setup_pbs(_h, _c, _svrs, _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr)
         for _h, _cs in svrs.items():
             for _c in _cs:
                 _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,

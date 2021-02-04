@@ -1,6 +1,8 @@
 #!/bin/bash
 
 if [ "x$1" == "xwaitsvr" ]; then
+    {
+    set -x
     if [ "x$2" != "xdefault" ]; then
         export PBS_CONF_FILE=${2}/confs/pbs-server-$3.conf
         . ${2}/confs/pbs-server-$3.conf
@@ -9,6 +11,11 @@ if [ "x$1" == "xwaitsvr" ]; then
         . /etc/pbs.conf
     fi
     _ct=0
+    if [ "x$1" != "xdefault" ]; then
+        _svr=$(hostname -s)
+    else
+        _svr="pbs-server-$3"
+    fi
     while true
     do
         /opt/pbs/bin/qstat -Bf &>/dev/null
@@ -24,18 +31,37 @@ if [ "x$1" == "xwaitsvr" ]; then
     done
     sleep 10
     _moms=$4
-    for _ms in ${_moms//-/ }
+    /opt/pbs/bin/pbsnodes -avSj
+    # _moms=host1:1@0=4,1=8,2=12,3=16+2@0=6,1=10,2=14_host2:1@4=18,5=22,6=26,7=30+2@3=20,4=24,5=28_....
+    # Divide each '_' delimited component
+    for _ms in ${_moms//_/ }
+    # _ms=host1:1@0=4,1=8,2=12,3=16+2@0=6,1=10,2=14
+    # _ms=host2:1@4=18,5=22,6=26,7=30+2@3=20,4=24,5=28
+    # ...
     do
         _host=${_ms//:*}
         _ss=${_ms#*:}
+        echo "_host: {$_host}"
+        echo "_ss: {$_ss}"
+        # Divide each '+' delimited component
         for _s in ${_ss//+/ }
+        # _s=1@0=4,1=8,2=12,3=16
+        # _s=2@0=6,1=10,2=14
+        # ...
         do
             _si=${_s//@*}
             if [ "x${_si}" != "x${3}" ]; then
                 continue
             fi
             __ms=${_s#*@}
+            echo "_si: {$_si}"
+            echo "__ms: {$__ms}"
+
+            # Divide each ',' delimited component
             for _m in ${__ms//,/ }
+            # _m=0=4
+            # _m=1=8
+            # ...
             do
                 _mi=${_m//=*}
                 _ct=0
@@ -56,6 +82,7 @@ if [ "x$1" == "xwaitsvr" ]; then
         done
     done
     exit 0
+    } 2>&1 > /tmp/waitsvr.log
 fi
 {
 set -x
@@ -82,8 +109,10 @@ if [ "x$2" == "xserver" -a $# -ge 6 ]; then
     {
         if [ "x$1" != "xdefault" ]; then
             echo PBS_SERVER=$(hostname -s)
+            _svr=$(hostname -s)
         else
             echo PBS_SERVER=pbs-server-$3
+            _svr="pbs-server-$3"
         fi
         echo PBS_EXEC=/opt/pbs
         echo PBS_HOME=${_phome}/pbs-server-$3
@@ -136,6 +165,7 @@ elif [ "x$2" == "xmom" -a $# -ge 5 ]; then
 else
     exit 1
 fi
+
 /opt/pbs/libexec/pbs_habitat
 if [ "x$2" == "xserver" ]; then
     if [ "x${12}" != "x" ]; then
@@ -170,9 +200,11 @@ if [ "x$2" == "xserver" ]; then
                     _mi=${_m//=*}
                     _port=${_m#*=}
                     _port=$(( 18000 + _port ))
-                    PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}"
+                    echo 'PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}"'
+                    PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}" &>> /tmp/qmgrout
                     if [ "x${_vnodes}" == "x0" -a "x${_cpus}" != "x0" ]; then
-                        PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "s n pbs-mom-${_si}-${_mi} resources_available.ncpus = ${_cpus}"
+                        PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "s n pbs-mom-${_si}-${_mi} resources_available.ncpus = ${_cpus}" &>> /tmp/qmgrout
+                    PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "l n pbs-mom-${_si}-${_mi}" &>> /tmp/qmgrout
                     fi
                 done
             done
