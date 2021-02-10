@@ -2491,9 +2491,18 @@ if __name__ == '__main__':
             # process_output(r[n]['accounting'])
 
 
-            config = sname.split('cpu')[0].split('m')
-            moms = int(config[0])
-            cpus = int(config[1])
+            moms = re.findall(r"(\d+)m", sname)
+            if moms:
+                moms = moms[0]
+            else:
+                print("Bad test name, couldn't determine mom count")
+                sys.exit(1)
+            cpus = re.findall(r"(\d+)cpu", sname)
+            if cpus:
+                cpus = cpus[0]
+            else:
+                print("Bad test name, couldn't determine cpus count")
+                sys.exit(1)
             vnodes = 1
 
             qjobs = int(r[n]['server']['num_jobs_queued'])

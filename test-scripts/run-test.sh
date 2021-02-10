@@ -137,6 +137,45 @@ function test_with_sched_off() {
 	collect_logs sched_off
 }
 
+function clear_logs() {
+	local _host _svrs _d
+
+	if [ "x${nocon}" == "x1" ]; then
+		workd="/var/spool/pbs"
+	else
+		workd="${TMPDIR}/pbs"
+	fi
+
+	for _host in $(cat ${curdir}/nodes)
+	do
+		_svrs=$(${SSH_CMD} ${_host} ls -1 ${workd} 2>/dev/null | grep pbs-server | sort -u)
+		_moms=$(${SSH_CMD} ${_host} ls -1 ${workd} 2>/dev/null | grep pbs-mom | sort -u)
+		if [ "x${_svrs}" == "x" -a "x${_moms}" == "x" ]; then
+			continue
+		fi
+		for _d in ${_svrs}
+		do
+			${SSH_CMD} ${_host} podman exec ${_d} pkill pbs
+			sleep 2
+			${SSH_CMD} ${_host} podman exec ${_d} rm -rf ${workd}/${_d}/server_logs
+			${SSH_CMD} ${_host} podman exec ${_d} rm -rf ${workd}/${_d}/accounting_logs
+			${SSH_CMD} ${_host} podman exec ${_d} rm -rf ${workd}/${_d}/sched_logs
+			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/server_logs
+			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/accounting_logs
+			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/sched_logs
+			${SSH_CMD} ${_host} podman exec ${_d} /etc/init.d/pbs start
+		done
+		for _d in ${_moms}
+		do
+			${SSH_CMD} ${_host} podman exec ${_d} pkill pbs
+			sleep 2
+			${SSH_CMD} ${_host} podman exec ${_d} rm -rf ${workd}/${_d}/mom_logs
+			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/mom_logs
+			${SSH_CMD} ${_host} podman exec ${_d} /etc/init.d/pbs start
+		done
+	done
+}
+
 function test_with_sched_on() {
 	${CON_CMD} /opt/pbs/bin/qmgr -c "s s scheduling=1"
 	${curdir}/submit-jobs.sh ${nocon} ${num_jobs} ${jtype} ${num_subjobs}
@@ -180,9 +219,12 @@ function test_with_rate_limit() {
 ############################
 collect_info
 test_with_sched_off
+clear_logs
 collect_info
 test_with_sched_on
+clear_logs
 collect_info
 test_with_mixed
+clear_logs
 #collect_info
 #test_with_rate_limit
