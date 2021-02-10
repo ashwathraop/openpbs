@@ -9,6 +9,9 @@ from concurrent.futures import ProcessPoolExecutor, wait
 
 MYDIR = str(pathlib.Path(__file__).resolve().parent)
 ME = socket.getfqdn(socket.gethostname())
+TMPDIR = os.path.join(os.sep, 'run', 'user', str(os.getuid()))
+if not os.path.exists(TMPDIR):
+    TMPDIR = '/tmp'
 
 
 def run_cmd(host, cmd):
@@ -67,7 +70,7 @@ def cleanup_containers(host):
                 _ps.append(executor.submit(delete_container, host, _p))
             wait(_ps)
     _c = ['podman', 'run', '--network', 'host', '-it']
-    _c += ['--rm', '-l', 'pbs=1', '-v', '/tmp:/tmp/htmp']
+    _c += ['--rm', '-l', 'pbs=1', '-v', TMPDIR+':/tmp/htmp']
     _c += ['centos:8', 'rm', '-rf']
     _c += ['/tmp/htmp/pbs', '/tmp/htmp/rpms']
     _c += ['/tmp/htmp/pbssetuplogs']
@@ -94,7 +97,7 @@ def cleanup_system(host, nocon):
 def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
     _c = ['podman', 'run', '--privileged', '--network', 'host', '-itd']
     _c += ['--rm', '-l', 'pbs=1', '-v', '%s:%s' % (MYDIR, MYDIR)]
-    _c += ['-v', '/tmp/pbs:/var/spool/pbs']
+    _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
     _c += ['--name', c[0]]
     _c += ['--add-host=%s' % x for x in sips]
     _c += ['pbs:latest']
@@ -175,6 +178,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     _ts = tconf['total_num_svrs']
     _tm = tconf['total_num_moms']
     _mph = tconf['num_moms_per_host']
+    _sph = tconf['num_svrs_per_host']
     _cpm = tconf['num_cpus_per_mom']
     _dbt = tconf['async_db']
     _vnd = tconf['num_vnodes_per_mom']
@@ -192,11 +196,14 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     _hi = 0
     print("Total servers:", _ts, "Total moms:", _tm)
     # Starting from host 0, set the number of server containers to be launched on each host
-    # e.g - if we have 2 servers and 2+ hosts, hosts 0 and 1 will launch 1 srv container each
+    # e.g - i) if we have 2 servers and servers per host is 1 and 2+ hosts, 
+    # hosts 0 and 1 will launch 1 srv container each
+    # e.g - ii) if we have 2 servers and servers per host is 2 and 2+ hosts, 
+    # hosts 0 will launch 2 srv containers
     # this is done by setting 'ns' key of the host's conf map
     for i in range(1, _ts + 1):
         _confs[hosts[_hi]]['ns'] += 1
-        if _ts < _hl:
+        if _ts < _hl and _confs[hosts[_hi]]['ns'] == _sph:
             _hi += 1
         if _hi == _hl:
             _hi = 0
@@ -344,7 +351,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         wait(_ps)
 
     for _h in hosts:
-        run_cmd(_h, ['mkdir', '-p', '/tmp/pbs'])
+        run_cmd(_h, ['mkdir', '-p', TMPDIR+'/pbs'])
         if nocon:
             run_cmd(_h, [os.path.join(MYDIR, 'install-pbs.sh')])
 

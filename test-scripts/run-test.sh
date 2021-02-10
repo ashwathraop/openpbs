@@ -2,7 +2,7 @@
 
 curdir=$(dirname $(readlink -f $0))
 cd ${curdir}
-
+TMPDIR="/tmp"
 resultdir=${curdir}/results/$1
 num_jobs=$2
 jtype=$3
@@ -13,6 +13,10 @@ if [ "x${nocon}" == "x1" ]; then
 	export PBS_CONF_FILE=/var/spool/pbs/confs/pbs-server-1.conf
 else
 	CON_CMD="podman exec pbs-server-1"
+	uid=`id -u`
+	if [ -d "/run/user/${uid}" ]; then
+		TMPDIR="/run/user/${uid}"
+	fi
 fi
 SSH_CMD="ssh -o ControlMaster=auto -o ControlPersist=300 -o ControlPath=~/.ssh/.cm-%r@%h@%p -o StrictHostKeyChecking=no"
 SCP_CMD="scp -o ControlMaster=auto -o ControlPersist=300 -o ControlPath=~/.ssh/.cm-%r@%h@%p -o StrictHostKeyChecking=no"
@@ -69,7 +73,7 @@ function collect_logs() {
 	if [ "x${nocon}" == "x1" ]; then
 		workd="/var/spool/pbs"
 	else
-		workd="/tmp/pbs"
+		workd="${TMPDIR}/pbs"
 	fi
 	mkdir -p ${_destd}
 	for _host in $(cat ${curdir}/nodes)

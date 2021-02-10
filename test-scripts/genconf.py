@@ -24,6 +24,7 @@ for _m in moms:
 				_n += '_' + _j
 				_t = {
 					"total_num_svrs": 1,
+                                        "num_svrs_per_host": 1,
 					"total_num_moms": _m,
 					"num_moms_per_host": 0,
 					"num_cpus_per_mom": _c,
