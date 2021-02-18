@@ -16,6 +16,7 @@ container="podman"
 chksum="md5sum"
 unameOut="$(uname -s)"
 case "${unameOut}" in
+    Linux*)	;;
     Darwin*)    container="docker"
 		chksum="md5 -r"
 		;;
