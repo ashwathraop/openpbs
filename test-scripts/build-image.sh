@@ -12,6 +12,18 @@ fi
 
 cd $1
 
+container="podman"
+chksum="md5sum"
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)	;;
+    Darwin*)    container="docker"
+		chksum="md5 -r"
+		;;
+    *)          echo "Unknown OS ${unameOut}"
+		exit 1
+esac
+
 cur_dir=$(pwd)
 TMP_DIR=${TMP_DIR:-/tmp}
 
@@ -115,16 +127,16 @@ RUN set -ex \\
     && dnf -y clean all
 __PP_DF__
 
-    _cur_md5=$(md5sum ${TMP_DIR}/pp_dockerfile | awk '{ print $1 }')
-    _image_md5=$(podman inspect pbs:latest -f '{{ index .Config.Labels "pbs-md5"}}' 2>/dev/null)
-    _src_md5=$(git ls-files | xargs md5sum | md5sum | awk '{ print $1 }')
-    _isrc_md5=$(podman inspect pbs:latest -f '{{ index .Config.Labels "pbs-src-md5"}}' 2>/dev/null)
+    _cur_md5=$(${chksum} ${TMP_DIR}/pp_dockerfile | awk '{ print $1 }')
+    _image_md5=$(${container} inspect pbs:latest -f '{{ index .Config.Labels "pbs-md5"}}' 2>/dev/null)
+    _src_md5=$(git ls-files | xargs ${chksum} | ${chksum} | awk '{ print $1 }')
+    _isrc_md5=$(${container} inspect pbs:latest -f '{{ index .Config.Labels "pbs-src-md5"}}' 2>/dev/null)
     if [ "x${_sr_cur_md5c_md5}" == "x${_image_md5}" -a "x${_src_md5}" == "x${_isrc_md5}" ]; then
         rm -f ${TMP_DIR}/pp_dockerfile
         return
     fi
 
-    podman build --force-rm --rm -f ${TMP_DIR}/pp_dockerfile -t pbs:latest --label pbs-md5=${_cur_md5} --label pbs-src-md5=${_src_md5} .
+    $container build --force-rm --rm -f ${TMP_DIR}/pp_dockerfile -t pbs:latest --label pbs-md5=${_cur_md5} --label pbs-src-md5=${_src_md5} .
     _ret=$?
     rm -f ${TMP_DIR}/pp_dockerfile
     if [ ${_ret} -ne 0 ]; then
@@ -134,8 +146,8 @@ __PP_DF__
 }
 
 build_image
-podman image save pbs:latest | gzip -c > ${cur_dir}/test-scripts/pbs.tgz
-podman run -it -v /tmp:/htmp --entrypoint /bin/bash pbs:latest -c "cp -rfv /opt/rpms /htmp"
+$container image save pbs:latest | gzip -c > ${cur_dir}/test-scripts/pbs.tgz
+$container run -it -v /tmp:/htmp --entrypoint /bin/bash pbs:latest -c "cp -rfv /opt/rpms /htmp"
 cp /tmp/rpms/*-server*.rpm ${cur_dir}/test-scripts/openpbs-server.rpm
 cp -v /tmp/rpms/*-server*.rpm ${cur_dir}/test-scripts/
 cp -v /tmp/rpms/*-debug*.rpm ${cur_dir}/test-scripts/
