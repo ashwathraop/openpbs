@@ -17,7 +17,7 @@ if not os.path.exists(TMPDIR):
 def run_cmd(host, cmd):
     if host != ME:
         cmd = ['ssh', host] + cmd
-    print("Running: " + " ".join(cmd))
+    print("Running: " + " ".join(cmd), flush=True)
     p = subprocess.run(cmd, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     return p.returncode == 0
@@ -100,6 +100,10 @@ def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
     _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
     _c += ['--name', c[0]]
     _c += ['--add-host=%s' % x for x in sips]
+    nip = socket.gethostbyname(host)
+    _c += ['--add-host=%s:%s' % (host.split('.', 1)[0],nip)]
+    if 'pbs-mom' in c[0]:
+        _c += ['--add-host=%s:%s' % (c[0],nip)]
     _c += ['pbs:latest']
     p = run_cmd(host, _c)
     if not p:
@@ -129,7 +133,7 @@ def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
         _c += [_psi]
         p = run_cmd(host, _c)
     if p:
-        print('Configured %s' % c[0])
+        print('Configured %s' % c[0], flush=True)
     else:
         print('Failed to configure %s' % c[0])
         print('Command is : %s' % " ".join(_c))
@@ -360,7 +364,8 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         _ps = []
         for _h, _cs in moms.items():
             for _c in _cs:
-                setup_pbs(_h, _c, _svrs, _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr)
+                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr))
         for _h, _cs in svrs.items():
             for _c in _cs:
                 _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
