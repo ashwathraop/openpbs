@@ -87,6 +87,8 @@ fi
 {
 set -x
 
+sed  's/127.0.1.1/#127.0.1.1/g' /etc/hosts > hosts
+/bin/cp -f hosts /etc/hosts
 /usr/sbin/sshd
 sudo -u munge munged
 
@@ -200,7 +202,7 @@ if [ "x$2" == "xserver" ]; then
                     _mi=${_m//=*}
                     _port=${_m#*=}
                     _port=$(( 18000 + _port ))
-                    echo 'PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}"'
+                    echo "PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}"
                     PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}" &>> /tmp/qmgrout
                     if [ "x${_vnodes}" == "x0" -a "x${_cpus}" != "x0" ]; then
                         PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "s n pbs-mom-${_si}-${_mi} resources_available.ncpus = ${_cpus}" &>> /tmp/qmgrout

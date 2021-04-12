@@ -70,7 +70,20 @@ RUN set -ex \\
     && dnf install -y gcc make rpm-build libtool hwloc-devel libX11-devel libXt-devel libedit-devel libical-devel ncurses-devel perl postgresql-devel postgresql-contrib python3-devel tcl-devel \\
     && dnf install -y tk-devel swig expat-devel openssl-devel libXext libXft autoconf automake gcc-c++ \\
     && dnf install -y expat libedit postgresql-server postgresql-contrib python3 sendmail sudo tcl tk libical python3-pip \\
-    && dnf install -y munge munge-libs munge-devel \\
+    && dnf install -y munge munge-libs munge-devel wget \\
+    && wget -O aerospike.tgz 'https://www.aerospike.com/download/server/latest/artifact/el8' \\
+    && wget -O aerospike_client.tgz 'https://www.aerospike.com/download/client/c/latest/artifact/el8' \\
+    && tar -xvf aerospike.tgz \\
+    && cd aerospike-server-community-* \\
+    && ./asinstall \\
+    && cat /etc/aerospike/aerospike.conf \\
+    && cd .. \\
+    && tar -xvf aerospike_client.tgz \\
+    && dnf install -y aerospike-client-c-*/*.rpm \\
+    && rm -f aerospike.tgz \\
+    && rm -rf aerospike-server-community-* \\
+    && rm -f aerospike_client.tgz \\
+    && rm -rf aerospike-client-c-* \\
     && create-munge-key \\
     && pip3 install numpy \\
     && echo 'Defaults  always_set_home' > /etc/sudoers.d/pbs \\
@@ -146,9 +159,10 @@ __PP_DF__
 }
 
 build_image
+mkdir -p ${cur_dir}/test-scripts
 $container image save pbs:latest | gzip -c > ${cur_dir}/test-scripts/pbs.tgz
 $container run -it -v /tmp:/htmp --entrypoint /bin/bash pbs:latest -c "cp -rfv /opt/rpms /htmp"
-cp /tmp/rpms/*-server*.rpm ${cur_dir}/test-scripts/openpbs-server.rpm
+cp /tmp/rpms/*-server-[0-9]*.rpm ${cur_dir}/test-scripts/openpbs-server.rpm
 cp -v /tmp/rpms/*-server*.rpm ${cur_dir}/test-scripts/
 cp -v /tmp/rpms/*-debug*.rpm ${cur_dir}/test-scripts/
 rm -rf /tmp/rpms
