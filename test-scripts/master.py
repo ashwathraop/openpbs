@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import argparse
+import time
 from concurrent.futures import ProcessPoolExecutor, wait
 
 MYDIR = str(pathlib.Path(__file__).resolve().parent)
@@ -17,7 +18,7 @@ if not os.path.exists(TMPDIR):
 def run_cmd(host, cmd):
     if host != ME:
         cmd = ['ssh', host] + cmd
-    print("Running: " + " ".join(cmd), flush=True)
+    print('++++ ' + time.ctime() + " ++++ :Running: " + " ".join(cmd), flush=True)
     p = subprocess.run(cmd, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     return p.returncode == 0
@@ -99,6 +100,8 @@ def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
     _c += ['--rm', '-l', 'pbs=1', '-v', '%s:%s' % (MYDIR, MYDIR)]
     _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
     _c += ['--name', c[0]]
+    if 'pbs-mom' in c[0]:
+        _c += ['-h', c[0]]
     _c += ['--add-host=%s' % x for x in sips]
     nip = socket.gethostbyname(host)
     _c += ['--add-host=%s:%s' % (host.split('.', 1)[0],nip)]
@@ -133,7 +136,7 @@ def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
         _c += [_psi]
         p = run_cmd(host, _c)
     if p:
-        print('Configured %s' % c[0], flush=True)
+        print('**** ' + time.ctime() + '****: Configured %s' % c[0], flush=True)
     else:
         print('Failed to configure %s' % c[0])
         print('Command is : %s' % " ".join(_c))
@@ -164,7 +167,7 @@ def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
         _c += [_psi]
         p = run_cmd(host, _c)
     if p:
-        print('Configured %s' % c[0])
+        print('**** ' + time.ctime() + '****: Configured %s' % c[0])
     else:
         print('Failed to configure %s' % c[0])
         print('Command is : %s' % " ".join(_c))
@@ -207,7 +210,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     # this is done by setting 'ns' key of the host's conf map
     for i in range(1, _ts + 1):
         _confs[hosts[_hi]]['ns'] += 1
-        if _ts < _hl and _confs[hosts[_hi]]['ns'] == _sph:
+        if (_ts/_sph) < _hl and _confs[hosts[_hi]]['ns'] == _sph:
             _hi += 1
         if _hi == _hl:
             _hi = 0
@@ -221,8 +224,8 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         # hosts which have server containers running will be skipped
         # done by setting the 'nm' key of a host's conf map
         while i < _tm:
-            # If num hosts > num servers, then don't launch moms on server hosts
-            if _hl > _ts:
+            # If num hosts > (num servers/num per servers), then don't launch moms on server hosts
+            if _hl > (_ts/_sph):
                 if _confs[hosts[_hi]]['ns'] == 0:
                     _confs[hosts[_hi]]['nm'] += 1
                     i += 1
@@ -260,7 +263,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             _c.append(str(_p))  # Adding port number for server
             _c.append(str(_p + 1))  # Port number for db
             _svr_name = _h.split('.')[0]    # PBS_SERVER_NAME, but UNUSED?
-            _svrs.append('%s:%d' % (_svr_name, _p)) # probably used for PSI, but UNUSED?
+            _svrs.append('pbs-server-%d:%d' % (_scnt, _p)) # probably used for PSI, but UNUSED?
             _sips.append('pbs-server-%d:%s' % (_scnt, ips[i]))  # server_host:ip address
             _confs[_h]['svrs'].append(_c)   # a host's 'svrs' key will contain each server container's '_c' created above
             if _scnt == 1 and nocon:
@@ -376,7 +379,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     return r[0]
 
 
-def run_tests(conf, hosts, ips, nocon):
+def run_tests(conf, hosts, ips, nocon, aspike):
     for _n, _s in conf['setups'].items():
         print('Configuring setup: %s' % _n)
         r = setup_cluster(_s, hosts, ips, conf, nocon)
@@ -388,6 +391,7 @@ def run_tests(conf, hosts, ips, nocon):
             _c += [str(_s['total_num_jobs']), _s['job_type']]
             _c += [str(_s['num_subjobs'])]
             _c.append('1' if nocon else '0')
+            _c.append('1' if aspike else '0')
             subprocess.run(_c)
 
 
@@ -396,6 +400,7 @@ def main():
     parser.add_argument('--clean', action='store_true', help='Do cleanup')
     parser.add_argument('--nocon', action='store_true',
                         help='Run tests in non-container mode')
+    parser.add_argument('--aspike', action='store_true', help='Use aerospike db')
     args = parser.parse_args()
 
     if not args.nocon and os.getuid() == 0:
@@ -455,7 +460,7 @@ def main():
             _ps.append(executor.submit(copy_artifacts, _h, args.nocon))
         wait(_ps)
 
-    run_tests(conf, hosts, ips, args.nocon)
+    run_tests(conf, hosts, ips, args.nocon, args.aspike)
 
     with ProcessPoolExecutor(max_workers=len(hosts)) as executor:
         _ps = []

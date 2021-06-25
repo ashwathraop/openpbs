@@ -113,8 +113,14 @@ if [ "x$2" == "xserver" -a $# -ge 6 ]; then
             echo PBS_SERVER=$(hostname -s)
             _svr=$(hostname -s)
         else
+	    if [ $3 -eq 1 ]; then
             echo PBS_SERVER=pbs-server-$3
             _svr="pbs-server-$3"
+	    else
+            echo PBS_SERVER=pbs-server-1
+            echo PBS_SERVER_HOST_NAME=pbs-server-$3
+            _svr="pbs-server-$3"
+	    fi
         fi
         echo PBS_EXEC=/opt/pbs
         echo PBS_HOME=${_phome}/pbs-server-$3
@@ -186,6 +192,8 @@ if [ "x$2" == "xserver" ]; then
     _cpus=$9
     _vnodes=${10}
     if [ "x${_moms}" != "xnone" ]; then
+    # delete nodes created automatically.
+	PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "d n @default"
         for _ms in ${_moms//_/ }
         do
             _host=${_ms//:*}
@@ -206,7 +214,7 @@ if [ "x$2" == "xserver" ]; then
                     PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "c n pbs-mom-${_si}-${_mi} MoM=${_host},Port=${_port}" &>> /tmp/qmgrout
                     if [ "x${_vnodes}" == "x0" -a "x${_cpus}" != "x0" ]; then
                         PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "s n pbs-mom-${_si}-${_mi} resources_available.ncpus = ${_cpus}" &>> /tmp/qmgrout
-                    PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "l n pbs-mom-${_si}-${_mi}" &>> /tmp/qmgrout
+                        PBS_SERVER_INSTANCES=${_svr}:$5 /opt/pbs/bin/qmgr -c "l n pbs-mom-${_si}-${_mi}" &>> /tmp/qmgrout
                     fi
                 done
             done
