@@ -210,6 +210,9 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     # this is done by setting 'ns' key of the host's conf map
     for i in range(1, _ts + 1):
         _confs[hosts[_hi]]['ns'] += 1
+        # if (total svrs / svrs per host) is less than total hosts and
+        # num servers allotted for this host "ns" == svrs per host
+        #  increase the _hi counter.
         if (_ts/_sph) < _hl and _confs[hosts[_hi]]['ns'] == _sph:
             _hi += 1
         if _hi == _hl:
@@ -224,7 +227,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         # hosts which have server containers running will be skipped
         # done by setting the 'nm' key of a host's conf map
         while i < _tm:
-            # If num hosts > (num servers/num per servers), then don't launch moms on server hosts
+            # If num of hosts > (total servers/ servers per host), then don't launch moms on server hosts
             if _hl > (_ts/_sph):
                 if _confs[hosts[_hi]]['ns'] == 0:
                     _confs[hosts[_hi]]['nm'] += 1
@@ -263,7 +266,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             _c.append(str(_p))  # Adding port number for server
             _c.append(str(_p + 1))  # Port number for db
             _svr_name = _h.split('.')[0]    # PBS_SERVER_NAME, but UNUSED?
-            _svrs.append('pbs-server-%d:%d' % (_scnt, _p)) # probably used for PSI, but UNUSED?
+            _svrs.append('pbs-server-%d:%d' % (_scnt, _p)) # used for PSI, sets svrname:port
             _sips.append('pbs-server-%d:%s' % (_scnt, ips[i]))  # server_host:ip address
             _confs[_h]['svrs'].append(_c)   # a host's 'svrs' key will contain each server container's '_c' created above
             if _scnt == 1 and nocon:
@@ -379,7 +382,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     return r[0]
 
 
-def run_tests(conf, hosts, ips, nocon, aspike):
+def run_tests(conf, hosts, ips, nocon):
     for _n, _s in conf['setups'].items():
         print('Configuring setup: %s' % _n)
         r = setup_cluster(_s, hosts, ips, conf, nocon)
@@ -391,7 +394,6 @@ def run_tests(conf, hosts, ips, nocon, aspike):
             _c += [str(_s['total_num_jobs']), _s['job_type']]
             _c += [str(_s['num_subjobs'])]
             _c.append('1' if nocon else '0')
-            _c.append('1' if aspike else '0')
             subprocess.run(_c)
 
 
@@ -400,7 +402,6 @@ def main():
     parser.add_argument('--clean', action='store_true', help='Do cleanup')
     parser.add_argument('--nocon', action='store_true',
                         help='Run tests in non-container mode')
-    parser.add_argument('--aspike', action='store_true', help='Use aerospike db')
     args = parser.parse_args()
 
     if not args.nocon and os.getuid() == 0:
@@ -460,7 +461,7 @@ def main():
             _ps.append(executor.submit(copy_artifacts, _h, args.nocon))
         wait(_ps)
 
-    run_tests(conf, hosts, ips, args.nocon, args.aspike)
+    run_tests(conf, hosts, ips, args.nocon)
 
     with ProcessPoolExecutor(max_workers=len(hosts)) as executor:
         _ps = []

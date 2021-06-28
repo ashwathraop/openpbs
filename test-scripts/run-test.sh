@@ -8,7 +8,6 @@ num_jobs=$2
 jtype=$3
 num_subjobs=$4
 nocon=$5
-aspk=$6
 if [ "x${nocon}" == "x1" ]; then
 	CON_CMD=""
 	export PBS_CONF_FILE=/var/spool/pbs/confs/pbs-server-1.conf
@@ -164,13 +163,6 @@ function clear_logs() {
 			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/server_logs
 			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/accounting_logs
 			${SSH_CMD} ${_host} podman exec ${_d} mkdir -p ${workd}/${_d}/sched_logs
-			if [ "x${aspk}" == "x1" ]; then
-
-				${SSH_CMD} ${_host} podman exec ${_d} pkill asd
-				sleep 2
-				${SSH_CMD} ${_host} podman exec ${_d} rm -f /opt/aerospike/data/bar.dat
-				${SSH_CMD} ${_host} podman exec ${_d} /usr/bin/asd --config-file /etc/aerospike/aerospike.conf
-			fi
 			${SSH_CMD} ${_host} podman exec ${_d} /etc/init.d/pbs start
 		done
 		for _d in ${_moms}
