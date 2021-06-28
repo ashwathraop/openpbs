@@ -95,41 +95,42 @@ def cleanup_system(host, nocon):
         run_cmd(host, _c)
 
 
-def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
-    _c = ['podman', 'run', '--privileged', '--network', 'host', '-itd']
-    _c += ['--rm', '-l', 'pbs=1', '-v', '%s:%s' % (MYDIR, MYDIR)]
-    _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
-    _c += ['--name', c[0]]
-    if 'pbs-mom' in c[0]:
-        _c += ['-h', c[0]]
-    _c += ['--add-host=%s' % x for x in sips]
-    nip = socket.gethostbyname(host)
-    _c += ['--add-host=%s:%s' % (host.split('.', 1)[0],nip)]
-    if 'pbs-mom' in c[0]:
-        _c += ['--add-host=%s:%s' % (c[0],nip)]
-    _c += ['pbs:latest']
-    p = run_cmd(host, _c)
-    if not p:
-        print("Failed to launch %s" % c[0])
-        return p
+def setup_pbs_con(host, c, svrs, sips, mips, moms, ncpus, asyncdb, vnodes, firstsvr, instype):
     _e = os.path.join(MYDIR, 'entrypoint')
-    _c = ['podman', 'exec', c[0], _e]
-    _c += c[1:]
-    if c[2] == 'server':
-        if asyncdb:
-            _c += ['1']
-        else:
-            _c += ['0']
-        _c += [moms]
-    elif c[2] == 'mom':
-        _c += [c[0]]
-    _c += [str(ncpus)]
-    _c += [str(vnodes)]
-    _c += [firstsvr]
-    if len(svrs) > 1:
-        _c += [','.join(svrs)]
-    p = run_cmd(host, _c)
-    if p and c[2] == 'server':
+    if not instype:
+        _c = ['podman', 'run', '--privileged', '--network', 'host', '-itd']
+        _c += ['--rm', '-l', 'pbs=1', '-v', '%s:%s' % (MYDIR, MYDIR)]
+        _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
+        _c += ['--name', c[0]]
+        if 'pbs-mom' in c[0]:
+            _c += ['-h', c[0]]
+        _c += ['--add-host=%s' % x for x in sips]
+        nip = socket.gethostbyname(host)
+        _c += ['--add-host=%s:%s' % (host.split('.', 1)[0],nip)]
+        if 'pbs-mom' in c[0]:
+            _c += ['--add-host=%s:%s' % (c[0],nip)]
+        _c += ['pbs:latest']
+        p = run_cmd(host, _c)
+        if not p:
+            print("Failed to launch %s" % c[0])
+            return p
+        _c = ['podman', 'exec', c[0], _e]
+        _c += c[1:]
+        if c[2] == 'server':
+            if asyncdb:
+                _c += ['1']
+            else:
+                _c += ['0']
+            _c += [moms]
+        elif c[2] == 'mom':
+            _c += [c[0]]
+        _c += [str(ncpus)]
+        _c += [str(vnodes)]
+        _c += [firstsvr]
+        if len(svrs) > 1:
+            _c += [','.join(svrs)]
+        p = run_cmd(host, _c)
+    if instype and c[2] == 'server':
         _c = ['podman', 'exec', c[0]]
         _c += [_e, 'waitsvr', c[1], str(c[3]), moms]
         _psi = firstsvr + ":" + str(c[5])
@@ -143,7 +144,7 @@ def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
     return p
 
 
-def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
+def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype):
     _c = [os.path.join(MYDIR, 'setup-pbs.sh')]
     _c += c
     if c[2] == 'server':
@@ -174,11 +175,11 @@ def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
     return p
 
 
-def setup_pbs(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, nocon, firstsvr):
+def setup_pbs(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, nocon, firstsvr, instype):
     if nocon:
-        return setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
+        return setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype)
     else:
-        return setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
+        return setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype)
 
 
 def setup_cluster(tconf, hosts, ips, conf, nocon):
@@ -365,17 +366,29 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         if nocon:
             run_cmd(_h, [os.path.join(MYDIR, 'install-pbs.sh')])
 
+    # setup server first
     r = [False]
     with ProcessPoolExecutor(max_workers=10) as executor:
         _ps = []
-        for _h, _cs in moms.items():
-            for _c in _cs:
-                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
-                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr))
         for _h, _cs in svrs.items():
             for _c in _cs:
                 _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
-                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr))
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr, 0))
+        r = list(set([_p.result() for _p in wait(_ps)[0]]))
+    if len(r) != 1:
+        return False
+
+    # setup moms and verify nodes
+    r = [False]
+    with ProcessPoolExecutor(max_workers=10) as executor:
+        for _h, _cs in moms.items():
+            for _c in _cs:
+                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr, 0))
+        for _h, _cs in svrs.items():
+            for _c in _cs:
+                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr, 1))
         r = list(set([_p.result() for _p in wait(_ps)[0]]))
     if len(r) != 1:
         return False
