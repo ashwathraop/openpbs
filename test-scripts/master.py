@@ -18,7 +18,7 @@ if not os.path.exists(TMPDIR):
 def run_cmd(host, cmd):
     if host != ME:
         cmd = ['ssh', host] + cmd
-    print('++++ ' + time.ctime() + " ++++ :Running: " + " ".join(cmd), flush=True)
+    #print('++++ ' + time.ctime() + " ++++ :Running: " + " ".join(cmd), flush=True)
     p = subprocess.run(cmd, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     return p.returncode == 0
@@ -30,7 +30,8 @@ def copy_artifacts(host, nocon):
         _c = ['scp', '-p']
         if not nocon:
             _c += [os.path.join(MYDIR, 'pbs.tgz')]
-        _c += [os.path.join(MYDIR, 'openpbs-server.rpm')]
+        else:
+            _c += [os.path.join(MYDIR, 'openpbs-server.rpm')]
         _c += [os.path.join(MYDIR, 'cleanup-pbs.sh')]
         _c += [os.path.join(MYDIR, 'entrypoint')]
         _c += [os.path.join(MYDIR, 'get-top.sh')]
@@ -202,6 +203,12 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     _confs = dict(
         [(_h, {'ns': 0, 'nm': _mph, 'svrs': [], 'moms': []}) for _h in hosts])
     _hi = 0
+    mom_cnt_per_svr = 0
+    if _ts > _hl:
+        # if no of servers are more than no of hosts
+        # allot moms to servers
+        mom_cnt_per_svr = int(_tm / _ts)
+
     print("Total servers:", _ts, "Total moms:", _tm)
     # Starting from host 0, set the number of server containers to be launched on each host
     # e.g - i) if we have 2 servers and servers per host is 1 and 2+ hosts, 
@@ -289,6 +296,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             _confs[_h]['moms'].append(_c)
 
     # This is where we add the associated server to each mom's conf
+    svr_mom_cnt = {}  #  temp counter to allot moms to all servers equally
     for _h in hosts:
         _mc = len(_confs[_h]['moms'])
         i = 0
@@ -300,9 +308,16 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
                 if _confs[__h]['ns'] == 0:
                     continue
                 for s in _confs[__h]['svrs']:
+                    if s[0] not in svr_mom_cnt:
+                        svr_mom_cnt[s[0]] = 0
+                    # dont let servers take more moms than they are allowed to.
+                    # this check is needed only when tot_svrs > tot_hosts
+                    if mom_cnt_per_svr > 0 and svr_mom_cnt[s[0]] == mom_cnt_per_svr:
+                        continue
                     _confs[_h]['moms'][i].append(s[3])  # Add 'svr count' of the server to mom's conf
                     _confs[_h]['moms'][i].append(s[5])  # Add the server's port to mom's conf
                     i += 1
+                    svr_mom_cnt[s[0]] += 1
                     if i == _mc:
                         break
     # Now, mom's conf has: [container name, pbs home/'default', 'mom', mom port, <svr count>, svr port]
