@@ -95,7 +95,7 @@ def cleanup_system(host, nocon):
         run_cmd(host, _c)
 
 
-def setup_pbs_con(host, c, svrs, sips, mips, moms, ncpus, asyncdb, vnodes, firstsvr, instype):
+def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype):
     _e = os.path.join(MYDIR, 'entrypoint')
     if not instype:
         _c = ['podman', 'run', '--privileged', '--network', 'host', '-itd']
