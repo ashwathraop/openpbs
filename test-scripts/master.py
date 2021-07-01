@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import argparse
+import time
 from concurrent.futures import ProcessPoolExecutor, wait
 
 MYDIR = str(pathlib.Path(__file__).resolve().parent)
@@ -17,7 +18,7 @@ if not os.path.exists(TMPDIR):
 def run_cmd(host, cmd):
     if host != ME:
         cmd = ['ssh', host] + cmd
-    print("Running: " + " ".join(cmd), flush=True)
+    #print('++++ ' + time.ctime() + " ++++ :Running: " + " ".join(cmd), flush=True)
     p = subprocess.run(cmd, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     return p.returncode == 0
@@ -29,7 +30,8 @@ def copy_artifacts(host, nocon):
         _c = ['scp', '-p']
         if not nocon:
             _c += [os.path.join(MYDIR, 'pbs.tgz')]
-        _c += [os.path.join(MYDIR, 'openpbs-server.rpm')]
+        else:
+            _c += [os.path.join(MYDIR, 'openpbs-server.rpm')]
         _c += [os.path.join(MYDIR, 'cleanup-pbs.sh')]
         _c += [os.path.join(MYDIR, 'entrypoint')]
         _c += [os.path.join(MYDIR, 'get-top.sh')]
@@ -94,53 +96,56 @@ def cleanup_system(host, nocon):
         run_cmd(host, _c)
 
 
-def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
-    _c = ['podman', 'run', '--privileged', '--network', 'host', '-itd']
-    _c += ['--rm', '-l', 'pbs=1', '-v', '%s:%s' % (MYDIR, MYDIR)]
-    _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
-    _c += ['--name', c[0]]
-    _c += ['--add-host=%s' % x for x in sips]
-    nip = socket.gethostbyname(host)
-    _c += ['--add-host=%s:%s' % (host.split('.', 1)[0],nip)]
-    if 'pbs-mom' in c[0]:
-        _c += ['--add-host=%s:%s' % (c[0],nip)]
-    _c += ['pbs:latest']
-    p = run_cmd(host, _c)
-    if not p:
-        print("Failed to launch %s" % c[0])
-        return p
+def setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype):
     _e = os.path.join(MYDIR, 'entrypoint')
-    _c = ['podman', 'exec', c[0], _e]
-    _c += c[1:]
-    if c[2] == 'server':
-        if asyncdb:
-            _c += ['1']
-        else:
-            _c += ['0']
-        _c += [moms]
-    elif c[2] == 'mom':
-        _c += [c[0]]
-    _c += [str(ncpus)]
-    _c += [str(vnodes)]
-    _c += [firstsvr]
-    if len(svrs) > 1:
-        _c += [','.join(svrs)]
-    p = run_cmd(host, _c)
-    if p and c[2] == 'server':
+    if not instype:
+        _c = ['podman', 'run', '--privileged', '--network', 'host', '-itd']
+        _c += ['--rm', '-l', 'pbs=1', '-v', '%s:%s' % (MYDIR, MYDIR)]
+        _c += ['-v', TMPDIR+'/pbs:/var/spool/pbs']
+        _c += ['--name', c[0]]
+        if 'pbs-mom' in c[0]:
+            _c += ['-h', c[0]]
+        _c += ['--add-host=%s' % x for x in sips]
+        nip = socket.gethostbyname(host)
+        _c += ['--add-host=%s:%s' % (host.split('.', 1)[0],nip)]
+        if 'pbs-mom' in c[0]:
+            _c += ['--add-host=%s:%s' % (c[0],nip)]
+        _c += ['pbs:latest']
+        p = run_cmd(host, _c)
+        if not p:
+            print("Failed to launch %s" % c[0])
+            return p
+        _c = ['podman', 'exec', c[0], _e]
+        _c += c[1:]
+        if c[2] == 'server':
+            if asyncdb:
+                _c += ['1']
+            else:
+                _c += ['0']
+            _c += [moms]
+        elif c[2] == 'mom':
+            _c += [c[0]]
+        _c += [str(ncpus)]
+        _c += [str(vnodes)]
+        _c += [firstsvr]
+        if len(svrs) > 1:
+            _c += [','.join(svrs)]
+        p = run_cmd(host, _c)
+    if instype and c[2] == 'server':
         _c = ['podman', 'exec', c[0]]
         _c += [_e, 'waitsvr', c[1], str(c[3]), moms]
         _psi = firstsvr + ":" + str(c[5])
         _c += [_psi]
         p = run_cmd(host, _c)
     if p:
-        print('Configured %s' % c[0], flush=True)
+        print('**** ' + time.ctime() + '****: Configured %s' % c[0], flush=True)
     else:
         print('Failed to configure %s' % c[0])
         print('Command is : %s' % " ".join(_c))
     return p
 
 
-def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr):
+def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype):
     _c = [os.path.join(MYDIR, 'setup-pbs.sh')]
     _c += c
     if c[2] == 'server':
@@ -164,18 +169,18 @@ def setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
         _c += [_psi]
         p = run_cmd(host, _c)
     if p:
-        print('Configured %s' % c[0])
+        print('**** ' + time.ctime() + '****: Configured %s' % c[0])
     else:
         print('Failed to configure %s' % c[0])
         print('Command is : %s' % " ".join(_c))
     return p
 
 
-def setup_pbs(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, nocon, firstsvr):
+def setup_pbs(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, nocon, firstsvr, instype):
     if nocon:
-        return setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
+        return setup_pbs_nocon(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype)
     else:
-        return setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr)
+        return setup_pbs_con(host, c, svrs, sips, moms, ncpus, asyncdb, vnodes, firstsvr, instype)
 
 
 def setup_cluster(tconf, hosts, ips, conf, nocon):
@@ -198,6 +203,12 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     _confs = dict(
         [(_h, {'ns': 0, 'nm': _mph, 'svrs': [], 'moms': []}) for _h in hosts])
     _hi = 0
+    mom_cnt_per_svr = 0
+    if _ts > _hl:
+        # if no of servers are more than no of hosts
+        # allot moms to servers
+        mom_cnt_per_svr = int(_tm / _ts)
+
     print("Total servers:", _ts, "Total moms:", _tm)
     # Starting from host 0, set the number of server containers to be launched on each host
     # e.g - i) if we have 2 servers and servers per host is 1 and 2+ hosts, 
@@ -207,7 +218,10 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     # this is done by setting 'ns' key of the host's conf map
     for i in range(1, _ts + 1):
         _confs[hosts[_hi]]['ns'] += 1
-        if _ts < _hl and _confs[hosts[_hi]]['ns'] == _sph:
+        # if (total svrs / svrs per host) is less than total hosts and
+        # num servers allotted for this host "ns" == svrs per host
+        #  increase the _hi counter.
+        if (_ts/_sph) < _hl and _confs[hosts[_hi]]['ns'] == _sph:
             _hi += 1
         if _hi == _hl:
             _hi = 0
@@ -221,8 +235,8 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         # hosts which have server containers running will be skipped
         # done by setting the 'nm' key of a host's conf map
         while i < _tm:
-            # If num hosts > num servers, then don't launch moms on server hosts
-            if _hl > _ts:
+            # If num of hosts > (total servers/ servers per host), then don't launch moms on server hosts
+            if _hl > (_ts/_sph):
                 if _confs[hosts[_hi]]['ns'] == 0:
                     _confs[hosts[_hi]]['nm'] += 1
                     i += 1
@@ -260,7 +274,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             _c.append(str(_p))  # Adding port number for server
             _c.append(str(_p + 1))  # Port number for db
             _svr_name = _h.split('.')[0]    # PBS_SERVER_NAME, but UNUSED?
-            _svrs.append('%s:%d' % (_svr_name, _p)) # probably used for PSI, but UNUSED?
+            _svrs.append('pbs-server-%d:%d' % (_scnt, _p)) # used for PSI, sets svrname:port
             _sips.append('pbs-server-%d:%s' % (_scnt, ips[i]))  # server_host:ip address
             _confs[_h]['svrs'].append(_c)   # a host's 'svrs' key will contain each server container's '_c' created above
             if _scnt == 1 and nocon:
@@ -282,6 +296,7 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             _confs[_h]['moms'].append(_c)
 
     # This is where we add the associated server to each mom's conf
+    svr_mom_cnt = {}  #  temp counter to allot moms to all servers equally
     for _h in hosts:
         _mc = len(_confs[_h]['moms'])
         i = 0
@@ -293,9 +308,16 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
                 if _confs[__h]['ns'] == 0:
                     continue
                 for s in _confs[__h]['svrs']:
+                    if s[0] not in svr_mom_cnt:
+                        svr_mom_cnt[s[0]] = 0
+                    # dont let servers take more moms than they are allowed to.
+                    # this check is needed only when tot_svrs > tot_hosts
+                    if mom_cnt_per_svr > 0 and svr_mom_cnt[s[0]] == mom_cnt_per_svr:
+                        continue
                     _confs[_h]['moms'][i].append(s[3])  # Add 'svr count' of the server to mom's conf
                     _confs[_h]['moms'][i].append(s[5])  # Add the server's port to mom's conf
                     i += 1
+                    svr_mom_cnt[s[0]] += 1
                     if i == _mc:
                         break
     # Now, mom's conf has: [container name, pbs home/'default', 'mom', mom port, <svr count>, svr port]
@@ -359,17 +381,29 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
         if nocon:
             run_cmd(_h, [os.path.join(MYDIR, 'install-pbs.sh')])
 
+    # setup server first
     r = [False]
     with ProcessPoolExecutor(max_workers=10) as executor:
         _ps = []
-        for _h, _cs in moms.items():
-            for _c in _cs:
-                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
-                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr))
         for _h, _cs in svrs.items():
             for _c in _cs:
                 _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
-                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr))
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr, 0))
+        r = list(set([_p.result() for _p in wait(_ps)[0]]))
+    if len(r) != 1:
+        return False
+
+    # setup moms and verify nodes
+    r = [False]
+    with ProcessPoolExecutor(max_workers=10) as executor:
+        for _h, _cs in moms.items():
+            for _c in _cs:
+                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr, 0))
+        for _h, _cs in svrs.items():
+            for _c in _cs:
+                _ps.append(executor.submit(setup_pbs, _h, _c, _svrs,
+                                           _sips, _moms, _cpm, _dbt, _vnd, nocon, _firstsvr, 1))
         r = list(set([_p.result() for _p in wait(_ps)[0]]))
     if len(r) != 1:
         return False

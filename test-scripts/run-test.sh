@@ -217,14 +217,14 @@ function test_with_rate_limit() {
 ############################
 # end test funcs
 ############################
-collect_info
-test_with_sched_off
-clear_logs
+#collect_info
+#test_with_sched_off
+#clear_logs
 collect_info
 test_with_sched_on
-clear_logs
-collect_info
-test_with_mixed
-clear_logs
+#clear_logs
+#collect_info
+#test_with_mixed
+#clear_logs
 #collect_info
 #test_with_rate_limit
