@@ -203,11 +203,9 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
     _confs = dict(
         [(_h, {'ns': 0, 'nm': _mph, 'svrs': [], 'moms': []}) for _h in hosts])
     _hi = 0
-    mom_cnt_per_svr = 0
-    if _ts > _hl:
-        # if no of servers are more than no of hosts
-        # allot moms to servers
-        mom_cnt_per_svr = int(_tm / _ts)
+    # if no of servers are more than no of hosts
+    # allot moms to servers
+    mom_cnt_per_svr = int(_tm / _ts)
 
     print("Total servers:", _ts, "Total moms:", _tm)
     # Starting from host 0, set the number of server containers to be launched on each host
@@ -345,7 +343,6 @@ def setup_cluster(tconf, hosts, ips, conf, nocon):
             moms[_h].append(_c) # {'momhost1': [mom1's conf], 'momhost2': ...}
             # mom conf is now: [container name, pbs home/'default', 'mom', mom port, <svr hostname>/<svr container>, svr port]
             _mcs[_s] += 1
-
     # I think we are finally going to add mom info to the server confs
     # Will refer to server count as <svrid num> and mom count on server as <momid num on svrid>
     __moms = []
